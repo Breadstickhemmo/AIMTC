@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: mts_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: mts_admin
+      POSTGRES_PASSWORD: mts_password
+      POSTGRES_DB: mts_navigator
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: mts_backend
+    restart: unless-stopped
+    environment:
+      - PROXYAPI_KEY=${PROXYAPI_KEY}
+      - DATABASE_URL=postgresql://mts_admin:mts_password@db:5432/mts_navigator
+    depends_on:
+      - db
+    expose:
+      - "5000"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: mts_frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:

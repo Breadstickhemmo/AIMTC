@@ -1,0 +1,6 @@
+{
+  "name": "MTS Navigator",
+  "description": "AI-driven personalized learning navigator for career growth in the MTS ecosystem.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
