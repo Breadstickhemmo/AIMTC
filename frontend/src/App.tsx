@@ -1,26 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 import { Shell } from './components/layout/Shell';
 import { CareerStats } from './components/profile/CareerStats';
 import { RouteMap } from './components/route/RouteMap';
 import { AINavigator } from './components/chat/AINavigator';
 import { UserProfile, RouteNode, NodeStatus, ChatMessage } from './types';
-import { ChevronRight, LayoutGrid, Map, BrainCircuit } from 'lucide-react';
-
-const MOCK_PROFILE: UserProfile = {
-  name: "Дмитрий Анохин",
-  role: "Младший Frontend разработчик",
-  targetRole: "Middle Frontend разработчик",
-  level: 12,
-  progress: 34,
-  skills: [
-    { name: "React Query", level: 85 },
-    { name: "Node.js", level: 60 },
-    { name: "Typescript", level: 75 },
-    { name: "Дизайн МТС", level: 90 },
-    { name: "UX Стратегия", level: 45 }
-  ]
-};
+import { Map, BrainCircuit } from 'lucide-react';
+import { LandingPage } from './components/auth/LandingPage';
+import { AuthForm } from './components/auth/AuthForm';
 
 const MOCK_NODES: RouteNode[] = [
   { id: '1', title: 'Основы JS Фреймворков', type: 'курс', description: 'Основы современных фреймворков', estimatedTime: '2ч', status: NodeStatus.COMPLETED, x: 10, y: 50 },
@@ -31,39 +18,66 @@ const MOCK_NODES: RouteNode[] = [
   { id: '6', title: 'Финальная сертификация', type: 'тест', description: 'Карьерный прорыв: Middle Dev', estimatedTime: '1ч', status: NodeStatus.LOCKED, x: 90, y: 50 },
 ];
 
-import { LandingPage } from './components/auth/LandingPage';
-import { AuthForm } from './components/auth/AuthForm';
-
 export default function App() {
   const [authState, setAuthState] = useState<'landing' | 'login' | 'register' | 'authenticated'>('landing');
-  const [profile, setProfile] = useState<UserProfile>(MOCK_PROFILE);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [isLoadingAuth, setIsLoadingAuth] = useState(true);
   const [nodes, setNodes] = useState<RouteNode[]>(MOCK_NODES);
   const [activeTab, setActiveTab] = useState<'route' | 'chat'>('route');
   const [messages, setMessages] = useState<ChatMessage[]>([
-    { role: 'model', text: "Я проанализировал твой прогресс. Ты освоил JS Фреймворки быстрее чем 85% других пилотов. Готов перейти к Продвинутым Паттернам?" }
+    { role: 'model', text: "Я проанализировал твой прогресс. Готов перейти к Продвинутым Паттернам?" }
   ]);
   const [isTyping, setIsTyping] = useState(false);
+
+  useEffect(() => {
+    const token = localStorage.getItem('mts_token');
+    if (token) {
+      fetch('/api/me', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      .then(res => {
+        if (!res.ok) throw new Error('Token invalid');
+        return res.json();
+      })
+      .then(data => {
+        setProfile(data.user);
+        setAuthState('authenticated');
+      })
+      .catch(() => {
+        localStorage.removeItem('mts_token');
+      })
+      .finally(() => setIsLoadingAuth(false));
+    } else {
+      setIsLoadingAuth(false);
+    }
+  }, []);
 
   const handleSendMessage = async (text: string) => {
     const newMessages: ChatMessage[] = [...messages, { role: 'user', text }];
     setMessages(newMessages);
     setIsTyping(true);
+    
+    const token = localStorage.getItem('mts_token');
 
     try {
       const res = await fetch('/api/navigate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify({
           prompt: text,
-          history: messages.map(m => ({ role: m.role, parts: [{ text: m.text }] })),
-          currentProfile: profile
+          history: messages.map(m => ({ role: m.role, text: m.text }))
         })
       });
       const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      
       setMessages([...newMessages, { role: 'model', text: data.text }]);
     } catch (e) {
       console.error(e);
-      setMessages([...newMessages, { role: 'model', text: "У меня проблемы с подключением к облаку МТС. Пожалуйста, попробуй еще раз." }]);
+      setMessages([...newMessages, { role: 'model', text: "У меня проблемы с подключением. Сеанс связи прерван." }]);
     } finally {
       setIsTyping(false);
     }
@@ -77,6 +91,20 @@ export default function App() {
     }, 2000);
   };
 
+  const handleLogout = () => {
+    localStorage.removeItem('mts_token');
+    setProfile(null);
+    setAuthState('landing');
+  };
+
+  if (isLoadingAuth) {
+    return (
+      <div className="min-h-screen bg-[#F4F5F7] flex items-center justify-center font-black text-[#FF0032] uppercase tracking-widest">
+        Инициализация навигатора...
+      </div>
+    );
+  }
+
   if (authState === 'landing') {
     return <LandingPage onStart={(type) => setAuthState(type)} />;
   }
@@ -86,15 +114,19 @@ export default function App() {
       <AuthForm 
         type={authState} 
         onBack={() => setAuthState('landing')} 
-        onSuccess={() => setAuthState('authenticated')} 
+        onSuccess={(user) => {
+          setProfile(user);
+          setAuthState('authenticated');
+        }} 
       />
     );
   }
 
+  if (!profile) return null;
+
   return (
-    <Shell>
+    <Shell profile={profile} onLogout={handleLogout}>
       <div className="min-h-screen bg-[#F4F5F7] text-[#1D1D1D] font-sans overflow-hidden flex flex-col">
-        {/* Mobile Tab Switcher */}
         <div className="lg:hidden flex border-b border-[#E5E7EB] bg-white sticky top-0 z-50 px-6 pt-4 gap-6 shrink-0">
           <TabItem 
             active={activeTab === 'route'} 
@@ -111,7 +143,6 @@ export default function App() {
         </div>
 
         <div className="flex-1 flex flex-col lg:flex-row h-full lg:max-h-[calc(100vh-5rem)] gap-6 p-4 lg:p-6 overflow-hidden">
-          {/* SIDEBAR: AI NAVIGATOR (Visible on desktop or when chat active on mobile) */}
           <aside className={`w-full lg:w-87.5 shrink-0 h-150 lg:h-full ${activeTab === 'chat' ? 'flex' : 'hidden lg:flex'}`}>
              <AINavigator 
                messages={messages} 
@@ -121,9 +152,7 @@ export default function App() {
              />
           </aside>
 
-          {/* MAIN CONTENT AREA (Visible on desktop or when route active on mobile) */}
           <main className={`flex-1 flex flex-col gap-6 overflow-y-auto pr-2 scrollbar-hide mb-20 lg:mb-0 ${activeTab === 'route' ? 'flex' : 'hidden lg:flex'}`}>
-            {/* Header info */}
             <div className="flex items-center justify-between px-4">
                <div className="flex items-center gap-2 text-[#FF0032]">
                  <BrainCircuit className="w-5 h-5" />
@@ -134,10 +163,8 @@ export default function App() {
                </div>
             </div>
 
-            {/* TOP BENTO BAR */}
             <CareerStats profile={profile} />
 
-            {/* VISUAL ROUTE SECTION */}
             <section className="flex-1 min-h-150 overflow-x-auto overflow-y-hidden scrollbar-hide rounded-4xl">
                <div className="min-w-250 lg:min-w-0 h-full">
                   <RouteMap nodes={nodes} onNodeClick={(n) => console.log(n)} />
